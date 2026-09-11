@@ -1,0 +1,50 @@
+[
+  {
+    "category": "true_positive",
+    "sample_index": 1,
+    "predicted_class": 1,
+    "true_label": 1,
+    "confidence": 0.6382785439491272,
+    "image_path": "E:\\deepfake\\proj\\results\\gradcam_batch\\true_positive_0_idx1.png"
+  },
+  {
+    "category": "true_positive",
+    "sample_index": 3,
+    "predicted_class": 1,
+    "true_label": 1,
+    "confidence": 0.6764788627624512,
+    "image_path": "E:\\deepfake\\proj\\results\\gradcam_batch\\true_positive_1_idx3.png"
+  },
+  {
+    "category": "true_positive",
+    "sample_index": 5,
+    "predicted_class": 1,
+    "true_label": 1,
+    "confidence": 0.5722848176956177,
+    "image_path": "E:\\deepfake\\proj\\results\\gradcam_batch\\true_positive_2_idx5.png"
+  },
+  {
+    "category": "false_positive",
+    "sample_index": 0,
+    "predicted_class": 1,
+    "true_label": 0,
+    "confidence": 0.7146913409233093,
+    "image_path": "E:\\deepfake\\proj\\results\\gradcam_batch\\false_positive_0_idx0.png"
+  },
+  {
+    "category": "false_positive",
+    "sample_index": 2,
+    "predicted_class": 1,
+    "true_label": 0,
+    "confidence": 0.5871275067329407,
+    "image_path": "E:\\deepfake\\proj\\results\\gradcam_batch\\false_positive_1_idx2.png"
+  },
+  {
+    "category": "false_positive",
+    "sample_index": 4,
+    "predicted_class": 1,
+    "true_label": 0,
+    "confidence": 0.6235723495483398,
+    "image_path": "E:\\deepfake\\proj\\results\\gradcam_batch\\false_positive_2_idx4.png"
+  }
+]

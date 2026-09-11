@@ -1,0 +1,16 @@
+{
+  "accuracy": 0.5,
+  "precision": 0.5,
+  "recall": 1.0,
+  "specificity": 0.0,
+  "f1_score": 0.6666666666666666,
+  "roc_auc": 0.653061224489796,
+  "eer": 0.5,
+  "confusion_matrix": {
+    "tn": 0,
+    "fp": 7,
+    "fn": 0,
+    "tp": 7
+  },
+  "inference_ms_per_sec_audio": 119.3877032824925
+}

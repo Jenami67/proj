@@ -74,6 +74,6 @@ AUG_MP3_COMPRESSION_PROB = 0.15
 # Batch size kept modest since the training hardware isn't confirmed yet
 # (could end up being CPU-only). Safe to raise to 32/64 once you know your
 # GPU's VRAM.
-BATCH_SIZE = 16 # originally 2
-EPOCHS = 3 # originally 50
+BATCH_SIZE = 32 
+EPOCHS = 50 # originally 50
 LEARNING_RATE = 0.001

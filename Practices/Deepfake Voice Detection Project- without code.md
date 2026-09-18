@@ -28,8 +28,6 @@ The project has currently progressed through:
 9. Model evaluation
 10. Grad-CAM explainability implementation
 
-The following sections also briefly describe what was run in Google Colab to complete each phase.
-
 ---
 
 # 2. Dataset
@@ -57,45 +55,6 @@ else:
 ```
 
 After downloading, the `LA.zip` archive was stored in the project dataset directory for subsequent extraction and processing. Because Google Colab storage is temporary and can be wiped when a session ends, Google Drive was used to preserve the dataset, code files, extracted features, trained models, results, and other project files across sessions.
-
-### What was run in Google Colab
-
-To prepare the Colab environment, Google Drive was mounted and the project folder was selected:
-
-```python
-from google.colab import drive
-drive.mount('/content/drive')
-
-PROJECT_DIR = '/content/drive/MyDrive/deepfake_detector'
-```
-
-The project files were then checked with:
-
-```python
-%cd {PROJECT_DIR}
-!ls
-```
-
-Because processing the dataset directly from Drive could be slow, the dataset archive was extracted to the local Colab disk:
-
-```python
-zip_path = f'{PROJECT_DIR}/dataset/LA.zip'
-local_dataset_dir = '/content/dataset'
-
-os.makedirs(local_dataset_dir, exist_ok=True)
-!unzip -q {zip_path} -d {local_dataset_dir}
-!ls {local_dataset_dir}/LA
-```
-
-A symbolic link was created so that the project code could still find the dataset using the normal project path:
-
-```python
-expected_path = f'{PROJECT_DIR}/dataset/LA'
-actual_path = '/content/dataset/LA'
-os.symlink(actual_path, expected_path)
-```
-
-The dataset directory was then checked to confirm that the files were available.
 
 The dataset contains:
 
@@ -206,44 +165,6 @@ This is the **final exam**.
 
 The model does not use these samples to learn.
 
-### What was run in Google Colab
-
-The dataset-building and splitting phase was executed from the project directory with:
-
-```python
-!python build_dataset.py
-```
-
-Before running the script, the required packages were installed:
-
-```python
-!pip install -q xgboost librosa soundfile
-```
-
-The generated split files were checked with:
-
-```python
-!ls -lh /content/data/splits/
-```
-
-Because the split files were generated on the local Colab disk, they were copied to Google Drive for preservation:
-
-```python
-os.makedirs(f'{PROJECT_DIR}/data/splits_backup', exist_ok=True)
-!cp -r /content/data/splits/*.npy {PROJECT_DIR}/data/splits_backup/
-!ls -lh {PROJECT_DIR}/data/splits_backup/
-```
-
-When a later Colab session was started, the saved split files were restored to the expected project location:
-
-```python
-!rm data/splits
-!mv data/splits_backup data/splits
-!ls -lh data/splits/
-```
-
-This allowed `config.py` and the training code to find the split files without changing the project code.
-
 ---
 
 ## 3.1 Speaker-independent splitting
@@ -272,8 +193,6 @@ This is called a **speaker-independent split**.
 
 The thesis specifically requires this approach to reduce speaker-specific overfitting and test performance on unseen voices.
 
-The `build_dataset.py` script performed this process automatically. It read the protocol files, collected the speaker identifiers, grouped recordings by speaker, and created the training, validation and testing arrays. The resulting `.npy` files were then saved in the `data/splits` directory and backed up to Google Drive.
-
 ---
 
 # 4. Audio Preprocessing
@@ -288,16 +207,6 @@ The implemented preprocessing pipeline is:
 
 **Audio → 16 kHz mono → silence trimming → pre-emphasis → normalization → 4-second length**
 
-### What was run in Google Colab
-
-Audio preprocessing was performed automatically inside the dataset-building script. The preprocessing code was executed when the following command was run:
-
-```python
-!python build_dataset.py
-```
-
-The script loaded the audio files, applied the required preprocessing operations, extracted the features, and saved the resulting arrays into the split files.
-
 ---
 
 ## 4.1 Convert to 16 kHz mono
@@ -308,8 +217,6 @@ All audio is converted to:
 * **Mono**
 
 This means every recording uses the same basic audio format.
-
-The dataset-building script used the audio-loading and resampling functions to convert each recording to 16 kHz and mono before any further processing.
 
 ---
 
@@ -324,8 +231,6 @@ The project uses an amplitude-based threshold corresponding to:
 The purpose is to focus the system more on actual speech rather than empty silence.
 
 This follows the preprocessing specification in the thesis.
-
-The silence-trimming operation was applied inside `build_dataset.py` while each audio file was being processed.
 
 ---
 
@@ -343,8 +248,6 @@ In simple words:
 
 This is a traditional speech-processing step intended to make some useful speech characteristics easier to analyze.
 
-The pre-emphasis filter was applied by the dataset-building script before feature extraction.
-
 ---
 
 ## 4.4 Normalization
@@ -354,8 +257,6 @@ The audio amplitude is normalized to approximately:
 **-1 to +1**
 
 This prevents one recording from simply being much louder than another and makes the inputs more consistent.
-
-The normalization step was also performed inside `build_dataset.py` before the audio was converted into features.
 
 ---
 
@@ -372,12 +273,6 @@ Longer recordings are center-cropped.
 The thesis describes 4 seconds for shorter recordings and a central 6 seconds for longer recordings; the implemented project simplified this to a fixed 4-second duration for all recordings.
 
 This difference should be reported honestly rather than claiming the implementation exactly matches the thesis.
-
-The fixed-length processing was applied during the execution of:
-
-```python
-!python build_dataset.py
-```
 
 ---
 
@@ -402,24 +297,6 @@ The project extracts three main types:
 3. Chroma
 
 The thesis specifically identifies these as important spectral features.
-
-### What was run in Google Colab
-
-Feature extraction was performed inside `build_dataset.py`. The complete feature-generation phase was started with:
-
-```python
-!python build_dataset.py
-```
-
-For each preprocessed audio waveform, the script calculated the MFCC, Mel-spectrogram and chroma features. The generated features and labels were saved as NumPy files in the split directories.
-
-The generated files were checked with:
-
-```python
-!ls -lh /content/data/splits/
-```
-
-The feature files were then copied to Google Drive so they could be reused in later Colab sessions without processing all audio files again.
 
 ---
 
@@ -449,8 +326,6 @@ So each time frame of audio gets a 39-number description.
 
 The 39-dimensional MFCC representation is consistent with the thesis requirement for MFCC features.
 
-The MFCC, delta and delta-delta features were calculated by the feature-extraction functions inside `build_dataset.py` when the dataset-building command was executed.
-
 ---
 
 # 7. Mel-Spectrogram
@@ -475,8 +350,6 @@ and converts the result to a logarithmic decibel scale.
 
 This representation is particularly useful for the CNN because a CNN is very good at recognizing patterns in something that looks like an image.
 
-The Mel-spectrogram was generated inside `build_dataset.py` after preprocessing and augmentation. The resulting arrays were saved to disk and later loaded by the training code.
-
 ---
 
 # 8. Chroma
@@ -490,8 +363,6 @@ The implementation extracts:
 Although chroma is more commonly associated with music, it can also provide information about the pitch characteristics of speech.
 
 The project therefore stores MFCC, Mel-spectrogram and chroma representations for the audio.
-
-The chroma features were calculated by `build_dataset.py` together with the MFCC and Mel-spectrogram features. All generated feature arrays were saved in the split files for later training.
 
 ---
 
@@ -525,16 +396,6 @@ So:
 > **Implementation:** augmentation before training, then cached
 
 This is a deliberate simplification in the current project.
-
-### What was run in Google Colab
-
-Augmentation was executed automatically as part of the dataset-building process:
-
-```python
-!python build_dataset.py
-```
-
-The script loaded each training waveform, applied the selected augmentation operations, and then extracted features from the augmented waveform. The validation and test data were not augmented. The resulting augmented training features were saved as NumPy files for use during model training.
 
 ---
 
@@ -595,16 +456,6 @@ Therefore, accuracy is not considered by itself. The project also checks other m
 * Equal Error Rate (EER)
 
 These additional measurements help show whether the model is genuinely learning to separate real and fake voices, rather than only predicting the class that appears most often.
-
-### What was run in Google Colab
-
-Class weighting was applied during model training when the training script was executed:
-
-```python
-!python train.py
-```
-
-The training code calculated balanced class weights from the training labels and passed them to the neural-network training process. The baseline scripts also handled the class imbalance when training XGBoost and AdaBoost.
 
 ---
 
@@ -755,23 +606,6 @@ We want to ask:
 
 > **"Does combining CNN and RNN actually help?"**
 
-### What was run in Google Colab
-
-The neural-network models were trained by running:
-
-```python
-!python train.py
-```
-
-The same training command was used for the CNN-only, RNN-only and hybrid CNN-RNN models because the training script loads the configured model architectures and trains them using the cached feature files.
-
-The traditional baselines were trained separately with:
-
-```python
-!python xgboost_baseline.py
-!python adaboost_baseline.py
-```
-
 ---
 
 # 12. CNN-only Model
@@ -804,16 +638,6 @@ In simple terms:
 
 > **CNN = look at the sound picture and find suspicious patterns.**
 
-### What was run in Google Colab
-
-The CNN-only model was trained through:
-
-```python
-!python train.py
-```
-
-The training script loaded the cached Mel-spectrogram features, created the CNN-only architecture, calculated the class weights, and trained the model. The best and final model checkpoints were saved in the `models` directory.
-
 ---
 
 # 13. RNN-only Model
@@ -843,16 +667,6 @@ The project uses two bidirectional LSTM layers.
 In simple terms:
 
 > **RNN/LSTM = listen to how the voice changes over time.**
-
-### What was run in Google Colab
-
-The RNN-only model was trained using:
-
-```python
-!python train.py
-```
-
-The training script loaded the MFCC sequences, created the RNN-only architecture, trained the bidirectional LSTM model, and saved the model checkpoints and training progress files.
 
 ---
 
@@ -892,16 +706,6 @@ So the monkey version is:
 > **RNN:** "How does the sound change over time?"
 > **Hybrid:** "Let's ask both."
 
-### What was run in Google Colab
-
-The hybrid model was trained using:
-
-```python
-!python train.py
-```
-
-The training script loaded both the Mel-spectrogram and MFCC inputs, passed them through the CNN and RNN branches, fused their outputs, and trained the final classifier. The best and final hybrid model files were saved to Google Drive through the project directory.
-
 ---
 
 # 15. XGBoost Baseline
@@ -929,16 +733,6 @@ In simple terms:
 
 The thesis includes XGBoost as a temporal-feature baseline.
 
-### What was run in Google Colab
-
-The XGBoost baseline was trained by running:
-
-```python
-!python xgboost_baseline.py
-```
-
-The script loaded the cached feature arrays, calculated the summary statistics, combined the MFCC, Mel and chroma summaries into fixed-length vectors, trained the XGBoost classifier, and saved the evaluation results.
-
 ---
 
 # 16. AdaBoost Baseline
@@ -962,16 +756,6 @@ Therefore, the current report should say:
 > **AdaBoost was implemented as a comparative baseline using aggregated audio features.**
 
 It should **not** claim that the current AdaBoost experiment reproduces the exact pause-feature method from Nair et al.
-
-### What was run in Google Colab
-
-The AdaBoost baseline was trained by running:
-
-```python
-!python adaboost_baseline.py
-```
-
-The script loaded the cached features, created the aggregated MFCC, Mel and chroma vectors, trained the AdaBoost classifier, and saved the evaluation results.
 
 ---
 
@@ -1007,45 +791,6 @@ Training stops early if validation loss does not improve for:
 
 This prevents wasting training time after the model stops improving.
 
-### What was run in Google Colab
-
-The training process was started with:
-
-```python
-!python train.py
-```
-
-The script loaded the saved training and validation features, converted the labels to the required format, created the selected model architectures, calculated class weights, and trained the models using the settings described above.
-
-A generator sanity check was also performed to confirm that the data pipeline was producing correctly shaped batches:
-
-```python
-import numpy as np
-import tensorflow as tf
-import config
-from train import load_split, make_dataset
-
-train_mel, train_mfcc, y_train = load_split("train")
-y_train_cat = tf.keras.utils.to_categorical(y_train, num_classes=2)
-
-ds = make_dataset(
-    train_mel,
-    train_mfcc,
-    y_train_cat,
-    batch_size=32,
-    shuffle=True
-)
-
-for (mel_batch, mfcc_batch), y_batch in ds.take(1):
-    print("mel batch shape:", mel_batch.shape)
-    print("mfcc batch shape:", mfcc_batch.shape)
-    print("y batch shape:", y_batch.shape)
-
-print("Generator pipeline test passed.")
-```
-
-This test confirmed that the Mel-spectrogram batch, MFCC batch and label batch could be loaded correctly before full training began.
-
 ---
 
 # 18. Checkpoints and Resume
@@ -1067,16 +812,6 @@ This means that if the free Colab session stopped before training finished, the 
 The training code can resume from a previous checkpoint rather than starting completely from zero.
 
 Training progress is also stored in JSON files.
-
-### What was run in Google Colab
-
-Checkpointing and resume support were used automatically when the training command was executed:
-
-```python
-!python train.py
-```
-
-The script checked the model directory for existing checkpoints and saved the best-performing and final models during training. The progress JSON files were also written to the project directory so that training could continue after a Colab restart.
 
 ---
 
@@ -1109,34 +844,6 @@ During training, `tf.data.Dataset.from_generator()` is used so samples are loade
 These memory optimizations were implemented specifically to work within the resource limitations of the **free Google Colab tier**. They reduced RAM usage and made it possible to process the large dataset and train the models without requiring a paid Colab subscription or a more powerful local machine.
 
 Together, checkpointing and memory optimization were important practical engineering solutions for completing the experiments under the limited and sometimes unstable resources provided by free Google Colab.
-
-### What was run in Google Colab
-
-The memory-efficient dataset creation was performed with:
-
-```python
-!python build_dataset.py
-```
-
-The training pipeline was then tested using the generator code:
-
-```python
-ds = make_dataset(
-    train_mel,
-    train_mfcc,
-    y_train_cat,
-    batch_size=32,
-    shuffle=True
-)
-```
-
-The message:
-
-```text
-Generator pipeline test passed.
-```
-
-confirmed that the training data could be loaded in batches instead of loading the complete dataset into memory.
 
 ---
 
@@ -1195,31 +902,6 @@ For this type of detection system:
 > Lower EER is generally desirable.
 
 The thesis defines these evaluation metrics as part of the evaluation framework.
-
-### What was run in Google Colab
-
-The trained neural-network models were evaluated with:
-
-```python
-!python evaluate.py --model hybrid
-!python evaluate.py --model cnn_only
-!python evaluate.py --model rnn_only
-```
-
-The evaluation script loaded the saved models, generated predictions on the test split, calculated the evaluation metrics, and saved the results as JSON files.
-
-The model files were checked with:
-
-```python
-!ls -lh models/
-```
-
-The traditional baselines were evaluated through their own scripts:
-
-```python
-!python xgboost_baseline.py
-!python adaboost_baseline.py
-```
 
 ---
 
@@ -1301,14 +983,6 @@ These measurements were calculated by running prediction on the test set and div
 
 The thesis also identifies inference time as an important part of evaluating whether the system can operate in real time.
 
-The inference measurements were produced during the evaluation commands:
-
-```python
-!python evaluate.py --model hybrid
-!python evaluate.py --model cnn_only
-!python evaluate.py --model rnn_only
-```
-
 ---
 
 # 24. Grad-CAM Explainability
@@ -1339,16 +1013,6 @@ It does not directly apply Grad-CAM to the RNN-only model because that model doe
 The thesis identifies Grad-CAM/LRP as the planned explainability mechanism.
 
 The current implementation uses **Grad-CAM**, not LRP.
-
-### What was run in Google Colab
-
-The Grad-CAM utility was executed with:
-
-```python
-!python gradcam_utils.py
-```
-
-This loaded the required model and feature information, generated Grad-CAM heatmaps for the supported CNN-based models, and saved or displayed the explainability outputs.
 
 ---
 
@@ -1384,28 +1048,6 @@ Evaluation results are saved in:
 The processed datasets, cached features, checkpoints and result files are also stored in Google Drive so they remain available after a Colab session ends or is restarted.
 
 This makes it possible to resume training, reproduce experiments and inspect the results without immediately retraining every model.
-
-### What was run in Google Colab
-
-The saved files were checked with:
-
-```python
-!ls -lh models/
-```
-
-The split and feature backups were checked with:
-
-```python
-!ls -lh data/splits_backup/
-```
-
-The dataset and model files were stored under:
-
-```python
-PROJECT_DIR = '/content/drive/MyDrive/deepfake_detector'
-```
-
-This ensured that the important outputs were preserved outside the temporary Colab runtime.
 
 ---
 
@@ -1482,19 +1124,6 @@ At this stage, the following major parts of the project have been implemented:
 ✓ CNN-only support
 ✓ Hybrid-model support
 ✓ Heatmap generation
-
-The main Colab commands used to complete these phases were:
-
-```python
-!python build_dataset.py
-!python train.py
-!python evaluate.py --model hybrid
-!python evaluate.py --model cnn_only
-!python evaluate.py --model rnn_only
-!python xgboost_baseline.py
-!python adaboost_baseline.py
-!python gradcam_utils.py
-```
 
 ---
 

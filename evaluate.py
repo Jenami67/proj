@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import csv
 import json
 import time
 
@@ -44,9 +45,15 @@ MODEL_REGISTRY = {
 
 
 def load_test_split():
-    mel = np.load(config.SPLITS_DIR / "test_mel.npy")
-    mfcc = np.load(config.SPLITS_DIR / "test_mfcc.npy")
-    y = np.load(config.SPLITS_DIR / "test_y.npy")
+    """mmap_mode='r' avoids reading the full test arrays into RAM up
+    front -- same reasoning as train.py's load_split(). model.predict()
+    already batches internally via its own batch_size argument, so this
+    (unlike training) doesn't need a full tf.data.Dataset rewrite -- the
+    mmap alone is enough to avoid holding the whole array in RAM before
+    predict() starts streaming through it batch by batch."""
+    mel = np.load(config.SPLITS_DIR / "test_mel.npy", mmap_mode="r")
+    mfcc = np.load(config.SPLITS_DIR / "test_mfcc.npy", mmap_mode="r")
+    y = np.load(config.SPLITS_DIR / "test_y.npy", mmap_mode="r")
     return mel, mfcc, y
 
 
@@ -63,7 +70,27 @@ def build_model_inputs(mel, mfcc, inputs_kind):
     raise ValueError(f"Unknown inputs_kind: {inputs_kind}")
 
 
-def evaluate_model(model_path, inputs_kind="both"):
+def save_predictions_csv(y_true, y_pred, y_score_fake, model_name):
+    """Writes one row per test sample to results/predictions_<model_name>.csv.
+    This is the per-sample counterpart to save_results()'s aggregate JSON --
+    needed for statistical_analysis.py, which requires the same test
+    samples' true_label/predicted_class/y_score_fake to run McNemar's test
+    and the paired bootstrap across models. y_score_fake follows the same
+    convention as compute_all_metrics(): P(class == 1 == fake), NOT the
+    probability of whichever class was predicted -- that distinction
+    matters because roc_auc_score requires a score for a fixed positive
+    class, not the "winning" class's own probability."""
+    config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = config.RESULTS_DIR / f"predictions_{model_name}.csv"
+    with open(out_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["true_label", "predicted_class", "y_score_fake"])
+        for t, p, s in zip(y_true, y_pred, y_score_fake):
+            writer.writerow([int(t), int(p), float(s)])
+    print(f"Saved per-sample predictions to {out_path}")
+
+
+def evaluate_model(model_path, inputs_kind="both", model_name="custom"):
     mel, mfcc, y_true = load_test_split()
     model = tf.keras.models.load_model(model_path)
     model_inputs = build_model_inputs(mel, mfcc, inputs_kind)
@@ -79,6 +106,8 @@ def evaluate_model(model_path, inputs_kind="both"):
     ms_per_second_audio = (
         (elapsed * 1000) / total_audio_seconds if total_audio_seconds else 0
     )
+
+    save_predictions_csv(y_true, y_pred, y_score_fake, model_name)
 
     results = compute_all_metrics(y_true, y_pred, y_score_fake)
     results["inference_ms_per_sec_audio"] = ms_per_second_audio
@@ -117,7 +146,7 @@ def main():
         inputs_kind = entry["inputs"]
         model_name = args.model
 
-    results = evaluate_model(model_path, inputs_kind)
+    results = evaluate_model(model_path, inputs_kind, model_name=model_name)
     print_metrics(results, title=f"Evaluation results ({model_name}):")
     save_results(results, model_name)
 

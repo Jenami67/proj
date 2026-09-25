@@ -1,6 +1,29 @@
 """Training script (Section 3.1.6): Adam optimizer (lr=0.001, beta1=0.9,
 beta2=0.999), categorical cross-entropy with class weighting.
 
+Data loading uses tf.data.Dataset.from_generator() instead of passing raw
+NumPy arrays straight to model.fit(). An earlier version of this script
+passed full arrays directly to model.fit(), which makes Keras stage the
+whole array for GPU transfer rather than streaming batches on demand --
+fine for the dummy smoke-test data, but on the real ASVspoof train split
+(train_mel.npy alone is ~4GB) that, plus TensorFlow's own graph/
+activation memory, was enough to exhaust the Colab free-tier T4's VRAM.
+
+A follow-up attempt used tf.data.Dataset.from_tensor_slices() on top of
+mmap_mode='r' numpy arrays, expecting the memmap to avoid a full read --
+but from_tensor_slices() converts its input into an in-memory EagerTensor
+immediately when the dataset is built, which forces the *entire* memmapped
+array to be read into RAM at that point regardless of the mmap. The "5
+allocation exceeds 10% of free system memory" warnings in testing were
+that conversion happening, not GPU/VRAM issue -- the fix never took
+effect for training in memory-limited environments.
+
+from_generator() is different: it wraps a Python generator function and
+only calls it (pulling one sample at a time) when the pipeline actually
+needs data, so indexing into the memmapped array happens lazily,
+sample-by-sample, and only a batch's worth is ever materialized as a
+real tensor at once.
+
 Supports --resume for Colab: free-tier sessions can disconnect mid-run,
 and ModelCheckpoint below already saves the best weights to Drive as
 training progresses, so a disconnect doesn't have to mean starting over
@@ -31,10 +54,57 @@ PROGRESS_PATH = config.MODELS_DIR / "hybrid_training_progress.json"
 
 
 def load_split(split_name):
-    mel = np.load(config.SPLITS_DIR / f"{split_name}_mel.npy")
-    mfcc = np.load(config.SPLITS_DIR / f"{split_name}_mfcc.npy")
-    y = np.load(config.SPLITS_DIR / f"{split_name}_y.npy")
+    """mmap_mode='r' means these arrays are memory-mapped from disk, not
+    fully read into RAM -- NumPy pages in only the slices that are
+    actually indexed. This only pays off if whatever reads from the
+    array also indexes it lazily -- see make_dataset() below, which
+    uses a generator specifically so this mmap isn't defeated by an
+    eager full-array conversion."""
+    mel = np.load(config.SPLITS_DIR / f"{split_name}_mel.npy", mmap_mode="r")
+    mfcc = np.load(config.SPLITS_DIR / f"{split_name}_mfcc.npy", mmap_mode="r")
+    y = np.load(config.SPLITS_DIR / f"{split_name}_y.npy", mmap_mode="r")
     return mel, mfcc, y
+
+
+def make_dataset(mel, mfcc, y_cat, batch_size, shuffle):
+    """Builds a tf.data pipeline that streams (mel, mfcc) -> label
+    batches without ever converting the full mel/mfcc arrays into an
+    in-memory tensor. from_generator() calls the generator function
+    lazily -- it only reads mel[i]/mfcc[i]/y_cat[i] from the memmapped
+    arrays as each sample is actually needed by the pipeline, so at most
+    a shuffle buffer's worth of samples plus the current batch exist as
+    real tensors at any moment.
+    """
+    n_samples = mel.shape[0]
+    mel_shape = mel.shape[1:]
+    mfcc_shape = mfcc.shape[1:]
+
+    def generator():
+        indices = np.arange(n_samples)
+        if shuffle:
+            rng = np.random.default_rng(config.RANDOM_STATE)
+            rng.shuffle(indices)
+        for i in indices:
+            # np.asarray(...) copies just this one sample out of the
+            # memmap into a small, ordinary in-memory array -- the rest
+            # of the mapped file stays untouched on disk.
+            yield (
+                (np.asarray(mel[i], dtype=np.float32), np.asarray(mfcc[i], dtype=np.float32)),
+                np.asarray(y_cat[i], dtype=np.float32),
+            )
+
+    output_signature = (
+        (
+            tf.TensorSpec(shape=mel_shape, dtype=tf.float32),
+            tf.TensorSpec(shape=mfcc_shape, dtype=tf.float32),
+        ),
+        tf.TensorSpec(shape=(y_cat.shape[1],), dtype=tf.float32),
+    )
+
+    dataset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    return dataset
 
 
 def main():
@@ -57,6 +127,13 @@ def main():
     )
     class_weights = dict(enumerate(class_weights_arr))
     print("Class weights:", class_weights)
+
+    train_dataset = make_dataset(
+        train_mel, train_mfcc, y_train_cat, config.BATCH_SIZE, shuffle=True
+    )
+    val_dataset = make_dataset(
+        val_mel, val_mfcc, y_val_cat, config.BATCH_SIZE, shuffle=False
+    )
 
     initial_epoch = 0
 
@@ -116,11 +193,10 @@ def main():
     ]
 
     model.fit(
-        [train_mel, train_mfcc], y_train_cat,
-        validation_data=([val_mel, val_mfcc], y_val_cat),
+        train_dataset,
+        validation_data=val_dataset,
         epochs=config.EPOCHS,
         initial_epoch=initial_epoch,
-        batch_size=config.BATCH_SIZE,
         class_weight=class_weights,
         callbacks=callbacks,
     )
@@ -131,4 +207,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

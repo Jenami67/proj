@@ -31,10 +31,44 @@ from model import build_cnn_only_model, build_rnn_only_model
 
 
 def load_split(split_name):
-    mel = np.load(config.SPLITS_DIR / f"{split_name}_mel.npy")
-    mfcc = np.load(config.SPLITS_DIR / f"{split_name}_mfcc.npy")
-    y = np.load(config.SPLITS_DIR / f"{split_name}_y.npy")
+    """mmap_mode='r' avoids reading the full arrays into RAM up front --
+    see train.py's load_split() for the full explanation of why this
+    matters (same reasoning applies here)."""
+    mel = np.load(config.SPLITS_DIR / f"{split_name}_mel.npy", mmap_mode="r")
+    mfcc = np.load(config.SPLITS_DIR / f"{split_name}_mfcc.npy", mmap_mode="r")
+    y = np.load(config.SPLITS_DIR / f"{split_name}_y.npy", mmap_mode="r")
     return mel, mfcc, y
+
+
+def make_dataset(x, y_cat, batch_size, shuffle):
+    """Same generator-based streaming approach as train.py's
+    make_dataset(), but for a single feature array (mel-only or
+    mfcc-only) instead of a pair. See train.py's docstring for the full
+    explanation of why from_generator() is used instead of
+    from_tensor_slices()."""
+    n_samples = x.shape[0]
+    x_shape = x.shape[1:]
+
+    def generator():
+        indices = np.arange(n_samples)
+        if shuffle:
+            rng = np.random.default_rng(config.RANDOM_STATE)
+            rng.shuffle(indices)
+        for i in indices:
+            yield (
+                np.asarray(x[i], dtype=np.float32),
+                np.asarray(y_cat[i], dtype=np.float32),
+            )
+
+    output_signature = (
+        tf.TensorSpec(shape=x_shape, dtype=tf.float32),
+        tf.TensorSpec(shape=(y_cat.shape[1],), dtype=tf.float32),
+    )
+
+    dataset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    return dataset
 
 
 def train_one_baseline(model_kind, resume=False):
@@ -59,6 +93,9 @@ def train_one_baseline(model_kind, resume=False):
         build_fresh = lambda: build_rnn_only_model(mfcc_shape=train_mfcc.shape[1:])
     else:
         raise ValueError(f"Unknown model_kind: {model_kind}")
+
+    train_dataset = make_dataset(train_x, y_train_cat, config.BATCH_SIZE, shuffle=True)
+    val_dataset = make_dataset(val_x, y_val_cat, config.BATCH_SIZE, shuffle=False)
 
     checkpoint_path = config.MODELS_DIR / f"{model_kind}_best.keras"
     progress_path = config.MODELS_DIR / f"{model_kind}_training_progress.json"
@@ -112,11 +149,10 @@ def train_one_baseline(model_kind, resume=False):
     ]
 
     model.fit(
-        train_x, y_train_cat,
-        validation_data=(val_x, y_val_cat),
+        train_dataset,
+        validation_data=val_dataset,
         epochs=config.EPOCHS,
         initial_epoch=initial_epoch,
-        batch_size=config.BATCH_SIZE,
         class_weight=class_weights,
         callbacks=callbacks,
     )
